@@ -46,10 +46,17 @@ public class BookingRepository {
                         requested_at, hold_until)
                         SELECT ?, g.id, t.id, ?, ?, ?, 'requested', ?, ?
                         FROM grounds g JOIN event_types t ON t.venue_id = g.venue_id
-                        WHERE g.venue_id = ? AND g.code = ? AND t.code = ?""")
-                .params(venueId, club, from, to, requestedAt, holdUntil, venueId, ground, event)
+                        WHERE g.venue_id = ? AND g.code = ? AND t.code = ?""").params(venueId, club, from, to, requestedAt, holdUntil, venueId, ground, event)
                 .update(key, "id");
         return key.getKeyAs(Long.class);
+        }
+    public void confirm(long id, Instant at) {
+        jdbc.sql("UPDATE bookings SET state = 'confirmed', confirmed_at = ? WHERE id = ?").params(at, id).update();
+    }
+
+    public void cancel(long id, Instant at, boolean late) {
+        jdbc.sql("UPDATE bookings SET state = 'cancelled', cancelled_at = ?, late_cancel = ? WHERE id = ?")
+                .params(at, late, id).update();
     }
 
     public Optional<Row> find(long venueId, long id) {
