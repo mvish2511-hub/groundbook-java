@@ -122,7 +122,7 @@ public class BookingService {
      * A shadow may not clash with the shadow of any live booking on the same ground and date; the booking itself
      * (id `self`, 0 for a new one) is left out.
      */
-    private void refuseClashes(long venueId, String ground, Instant from, Shadow held, long self) {
+    public void refuseClashes(long venueId, String ground, Instant from, Shadow held, long self) {
         Instant now = clock.instant();
         List<Map<String, Object>> clashes = bookings.onDay(venueId, ground, LocalDate.ofInstant(from, ZoneOffset.UTC))
                 .stream()
@@ -140,11 +140,11 @@ public class BookingService {
         }
     }
 
-    private Shadow shadowOf(BookingRepository.Row b) {
+    public Shadow shadowOf(BookingRepository.Row b) {
         return groundService.shadow(b.from(), b.to(), b.setupMinutes(), b.teardownMinutes());
     }
 
-    private BookingRepository.Row find(String venue, String bookingId) {
+    public BookingRepository.Row find(String venue, String bookingId) {
         long venueId = venues.idOf(venue).orElseThrow();
         return BookingIds.parse(bookingId).flatMap(id -> bookings.find(venueId, id))
                 .orElseThrow(() -> new NoSuchBooking(bookingId));
@@ -158,7 +158,7 @@ public class BookingService {
      * Checks a slot in order - the ground, the event type, `to` after `from`, 30 minutes to 12 hours, not in the past,
      * one date, and the shadow inside that weekday's hours - and answers its shadow.
      */
-    private Shadow slot(long venueId, String venue, String ground, String event, Instant from, Instant to) {
+    public Shadow slot(long venueId, String venue, String ground, String event, Instant from, Instant to) {
         GroundRepository.Row g = grounds.one(venueId, ground).orElseThrow(() -> new NoSuchGround(venue, ground));
         EventTypeRepository.Row type = eventTypes.one(venueId, event).orElseThrow(() -> new NoSuchEventType(event));
         if (!to.isAfter(from)) {
