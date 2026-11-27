@@ -6,6 +6,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
@@ -66,17 +69,23 @@ public class GroundService {
     }
 
     private long venueId(String venue) {
-    return venues.idOf(venue).orElseThrow(() -> new NoSuchVenue(venue));
-}
+        return venues.idOf(venue).orElseThrow(() -> new NoSuchVenue(venue));
+    }
 
+    public java.util.List<GroundRepository.Row> grounds(String venue) {
+        return grounds.all(venueId(venue));
+    }
 
-public java.util.List<GroundRepository.Row> grounds(String venue) {
-    return grounds.all(venueId(venue));
-}
+    public java.util.List<EventTypeRepository.Row> eventTypes(String venue) {
+        return eventTypes.all(venueId(venue));
+    }
 
-public java.util.List<EventTypeRepository.Row> eventTypes(String venue) {
-    return eventTypes.all(venueId(venue));
-}
-
+    /** Every event type's buffers, [setup, teardown] minutes, straight from the event_types rows. */
+    public Map<String, List<Integer>> buffers(String venue) {
+        Map<String, List<Integer>> buffers = new LinkedHashMap<>();
+        eventTypes.all(venueId(venue))
+                .forEach(t -> buffers.put(t.code(), List.of(t.setupMinutes(), t.teardownMinutes())));
+        return buffers;
+    }
 
 }

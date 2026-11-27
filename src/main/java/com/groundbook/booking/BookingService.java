@@ -190,11 +190,16 @@ public class BookingService {
         }
         Shadow held = groundService.shadow(from, to, type.setupMinutes(), type.teardownMinutes());
         LocalTime[] hours = GroundService.hours(g, day.getDayOfWeek());
-        if (held.from().isBefore(day.atTime(hours[0]).toInstant(ZoneOffset.UTC))
-                || held.to().isAfter(day.atTime(hours[1]).toInstant(ZoneOffset.UTC))) {
-            throw new BadInterval("Ground " + ground + " is not open across the booking's shadow (" + held.from()
-                    + " to " + held.to() + ")");
-        }
+        
+if (held.from().isBefore(day.atTime(hours[0]).toInstant(ZoneOffset.UTC))
+        || held.to().isAfter(day.atTime(hours[1]).toInstant(ZoneOffset.UTC))) {
+    throw new BadInterval(
+            "Ground " + ground + " is not open across the booking's shadow (" + held.from()
+                    + " to " + held.to() + ")",
+            hours[0],
+            hours[1]);
+}
+
         return held;
     }
 }
