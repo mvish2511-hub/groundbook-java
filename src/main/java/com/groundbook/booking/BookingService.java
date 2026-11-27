@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.groundbook.config.GroundBookSettings;
 import com.groundbook.error.AlreadyCancelled;
@@ -44,23 +45,27 @@ public class BookingService {
     private final GroundService groundService;
     private final BookingRepository bookings;
     private final GroundBookSettings settings;
+    private final EventLog events;
     private final Clock clock;
 
     public BookingService(VenueRepository venues, GroundRepository grounds, EventTypeRepository eventTypes,
-            GroundService groundService, BookingRepository bookings, GroundBookSettings settings, Clock clock) {
+            GroundService groundService, BookingRepository bookings, GroundBookSettings settings,
+            EventLog events, Clock clock) {
         this.venues = venues;
         this.grounds = grounds;
         this.eventTypes = eventTypes;
         this.groundService = groundService;
         this.bookings = bookings;
         this.settings = settings;
+        this.events = events;
         this.clock = clock;
     }
 
     /**
      * A request is held for HOLD_HOURS from the moment it is made; its shadow must clash with no live booking on the
-     * ground.
+     * ground. `The booking and its requested event are one transaction.`
      */
+    @Transactional
     public RequestedBooking request(String venue, String ground, String event, Instant from, Instant to, String club) {
         long venueId = venues.idOf(venue).orElseThrow(); // the one venue is seeded at start-up
         Shadow held = slot(venueId, venue, ground, event, from, to);
@@ -68,6 +73,7 @@ public class BookingService {
         Instant now = now();
         Instant holdUntil = now.plus(Duration.ofHours(settings.holdHours()));
         long id = bookings.insert(venueId, ground, event, club, from, to, now, holdUntil);
+        events.append(venueId, id, "requested", now, Map.of("from", from.toString(), "to", to.toString()));
         return new RequestedBooking(BookingIds.format(id), ground, event, from, to, held.from(), held.to(), "requested",
                 holdUntil);
     }
@@ -76,6 +82,7 @@ public class BookingService {
      * Confirm needs a requested booking whose slot has not begun, and re-runs the clash check (a competing request may
      * have been confirmed since).
      */
+    @Transactional
     public ConfirmResponse confirm(String venue, String bookingId) {
         BookingRepository.Row b = find(venue, bookingId);
         Instant now = now();
@@ -88,8 +95,10 @@ public class BookingService {
                 }
             }
         }
-        refuseClashes(venues.idOf(venue).orElseThrow(), b.ground(), b.from(), shadowOf(b), b.id());
+        long venueId = venues.idOf(venue).orElseThrow();
+        refuseClashes(venueId, b.ground(), b.from(), shadowOf(b), b.id());
         bookings.confirm(b.id(), now);
+        events.append(venueId, b.id(), "confirmed", now, Map.of());
         return new ConfirmResponse(bookingId, "confirmed", now);
     }
 
@@ -98,6 +107,7 @@ public class BookingService {
      * late - allowed, and flagged. Nobody can book the past, so the rest of the slot needs no
      * protecting.
      */
+    @Transactional
     public CancelResponse cancel(String venue, String bookingId) {
         BookingRepository.Row b = find(venue, bookingId);
         Instant now = now();
@@ -109,14 +119,17 @@ public class BookingService {
         }
         boolean late = !now.isBefore(b.from());
         bookings.cancel(b.id(), now, late);
+        events.append(venues.idOf(venue).orElseThrow(), b.id(), "cancelled", now, Map.of("late", late));
         return new CancelResponse(bookingId, "cancelled", now, late);
     }
 
     public BookingView booking(String venue, String bookingId) {
         BookingRepository.Row b = find(venue, bookingId);
         Shadow held = shadowOf(b);
-        return new BookingView(bookingId, b.ground(), b.event(), b.from(), b.to(), held.from(), held.to(), b.state());
+        return new BookingView(bookingId, b.ground(), b.event(), b.from(), b.to(), held.from(), held.to(), b.state(),
+                events.forBooking(b.id()));
     }
+
 
     /**
      * A shadow may not clash with the shadow of any live booking on the same ground and date; the booking itself
@@ -179,8 +192,8 @@ public class BookingService {
         LocalTime[] hours = GroundService.hours(g, day.getDayOfWeek());
         if (held.from().isBefore(day.atTime(hours[0]).toInstant(ZoneOffset.UTC))
                 || held.to().isAfter(day.atTime(hours[1]).toInstant(ZoneOffset.UTC))) {
-            throw new BadInterval("Ground " + ground + " would be held " + held.from() + " to " + held.to()
-                    + "; it opens at " + hours[0] + " and closes at " + hours[1], hours[0], hours[1]);
+            throw new BadInterval("Ground " + ground + " is not open across the booking's shadow (" + held.from()
+                    + " to " + held.to() + ")");
         }
         return held;
     }
